@@ -45,7 +45,7 @@ def evaluate(val_ds, model, batch_size=50):
     return accuracy
 
 
-def baseline(train_ds, val_ds, batch_size=50, epochs=40, start_lr=0.001, milestones="500, 1500, 3500",
+def baseline(train_ds, val_ds, class_weights, batch_size=50, epochs=40, start_lr=0.001, milestones="500, 1500, 3500",
              gpu="0", snapshot=None, models_path="./checkpoint"):
     if milestones is None:
         milestones = "100,200,300"
@@ -65,9 +65,9 @@ def baseline(train_ds, val_ds, batch_size=50, epochs=40, start_lr=0.001, milesto
 
     optimizer = optim.Adam(net.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer, milestones=[int(x) for x in milestones.split(',')], gamma=0.5)
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     iter = 0
-    best_score = 0.895
+    best_score = 0.91
     net.train()
     for epoch in range(starting_epoch, starting_epoch + epochs):
         train_loader = DataLoaderX(train_ds, batch_size, shuffle=True, pin_memory=True,
@@ -167,13 +167,13 @@ def test(model):
 
 
 if __name__ == "__main__":
-    train_ds, val_ds = data_prepare()
+    train_ds, val_ds, class_weights = data_prepare()
     checkpoints = glob.glob("checkpoint/*.pt")
     if checkpoints:
         checkpoint = sorted(checkpoints)[-1]
     else:
         checkpoint = None
-    net = baseline(train_ds, val_ds, snapshot=checkpoint)
+    net = baseline(train_ds, val_ds, class_weights, snapshot=checkpoint)
     onnx_model = toONNX(net)
     test(net)
 

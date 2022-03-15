@@ -39,12 +39,14 @@ class ResNet50(nn.Module):
         self.layer4 = model.layer4
         self.avgpool = model.avgpool
 
-        self.fc = nn.Linear(2048, 128)
-        self.bnlast = nn.BatchNorm1d(128)
+        self.fc = nn.Linear(2048, 2048)
+        self.bnlast = nn.BatchNorm1d(2048)
         self.relulast = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout()
 
-        self.classifier = nn.Linear(128, num_class)
+        self.fc1 = nn.Linear(2048, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.classifier = nn.Linear(256, num_class)
 
     def forward(self, x):
         x = self.conv0(x)
@@ -62,6 +64,8 @@ class ResNet50(nn.Module):
         x = self.bnlast(x)
         x = self.relulast(x)
         x = self.dropout(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
         x = self.classifier(x)
         return x
 

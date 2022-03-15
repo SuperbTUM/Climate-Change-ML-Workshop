@@ -13,6 +13,8 @@ from itertools import repeat
 from sklearn.utils import shuffle
 import pandas as pd
 from torchvision import transforms
+from sklearn.utils import class_weight
+
 
 def preprocessor(imageband_directory):
         """
@@ -95,14 +97,16 @@ def data_prepare():
     X_val = X[12001:15000]
     y_train = y_labels_num[0:12000]
     y_val = y_labels_num[12001:15000]
+
+    class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
+    class_weights = torch.tensor(class_weights, dtype=torch.float).cuda()
+
     tensor_X_train = torch.Tensor(X_train)
     tensor_y_train = torch.tensor(y_train, dtype=torch.long)
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
-        # transforms.Pad(10),
-        # transforms.RandomCrop((120, 120)),
-        transforms.RandomErasing(),
+        transforms.RandomRotation(10),
     ])
     train_ds = DatasetWithAugment(tensor_X_train, tensor_y_train, train_transform)
 
@@ -110,7 +114,7 @@ def data_prepare():
     tensor_y_test = torch.tensor(y_val, dtype=torch.long)
     test_transform = None
     test_ds = DatasetWithAugment(tensor_X_test, tensor_y_test, test_transform)
-    return train_ds, test_ds
+    return train_ds, test_ds, class_weights
 
 
 class DatasetWithAugment(Dataset):
