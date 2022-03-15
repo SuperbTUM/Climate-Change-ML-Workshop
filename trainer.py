@@ -1,4 +1,4 @@
-from model import SEDense18, SEDense34
+from model import SEDense18, SEDense34, ResNet50
 from dataset import *
 from prefetch_generator import BackgroundGenerator
 from torch.backends import cudnn
@@ -19,7 +19,7 @@ class DataLoaderX(DataLoader):
 
 def load_model(checkpoint=None):
     epoch = 0
-    net = SEDense34().cuda()
+    net = ResNet50().cuda()
     # net = nn.DataParallel(net)
     if checkpoint and os.path.exists(checkpoint):
         _, epoch = os.path.basename(checkpoint).split('_')
@@ -67,7 +67,7 @@ def baseline(train_ds, val_ds, batch_size=50, epochs=40, start_lr=0.001, milesto
     scheduler = MultiStepLR(optimizer, milestones=[int(x) for x in milestones.split(',')], gamma=0.5)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     iter = 0
-    best_score = 0.89
+    best_score = 0.895
     net.train()
     for epoch in range(starting_epoch, starting_epoch + epochs):
         train_loader = DataLoaderX(train_ds, batch_size, shuffle=True, pin_memory=True,
@@ -96,7 +96,7 @@ def baseline(train_ds, val_ds, batch_size=50, epochs=40, start_lr=0.001, milesto
                                                                             scheduler.get_last_lr()[0])
             iterator.set_description(status)
     net.eval()
-    file = glob.glob("checkpoint/*.pt")
+    file = glob.glob("checkpoint/*.pt")[0]
     net.load_state_dict(torch.load(file))
     return net
 

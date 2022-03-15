@@ -25,8 +25,49 @@ class SEBlock(nn.Module):
         return x
 
 
-class SEDense34(nn.Module):
+class ResNet50(nn.Module):
     def __init__(self, num_class=3):
+        super(ResNet50, self).__init__()
+        model = models.resnet50(pretrained=True)
+        self.conv0 = model.conv1
+        self.bn0 = model.bn1
+        self.relu0 = model.relu
+        self.pooling0 = model.maxpool
+        self.layer1 = model.layer1
+        self.layer2 = model.layer2
+        self.layer3 = model.layer3
+        self.layer4 = model.layer4
+        self.avgpool = model.avgpool
+
+        self.fc = nn.Linear(2048, 128)
+        self.bnlast = nn.BatchNorm1d(128)
+        self.relulast = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout()
+
+        self.classifier = nn.Linear(128, num_class)
+
+    def forward(self, x):
+        x = self.conv0(x)
+        x = self.bn0(x)
+        x = self.relu0(x)
+        x = self.pooling0(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.bnlast(x)
+        x = self.relulast(x)
+        x = self.dropout(x)
+        x = self.classifier(x)
+        return x
+
+
+class SEDense34(nn.Module):
+    def __init__(self, num_class=3, needs_norm=True):
         super().__init__()
         model = models.resnet34(pretrained=True)
         self.conv0 = model.conv1
@@ -48,6 +89,7 @@ class SEDense34(nn.Module):
         self.bottleneck24 = model.layer2[3]
 
         self.auxconv1 = nn.Conv2d(64, 128, 1, 2, 0)
+        self.optionalbn1 = nn.BatchNorm2d(128)
         self.seblock21 = SEBlock(128)
         self.seblock22 = SEBlock(128)
         self.seblock23 = SEBlock(128)
@@ -61,6 +103,7 @@ class SEDense34(nn.Module):
         self.bottleneck36 = model.layer3[5]
 
         self.auxconv2 = nn.Conv2d(128, 256, 1, 2, 0)
+        self.optionalbn2 = nn.BatchNorm2d(256)
         self.seblock31 = SEBlock(256)
         self.seblock32 = SEBlock(256)
         self.seblock33 = SEBlock(256)
@@ -73,6 +116,7 @@ class SEDense34(nn.Module):
         self.bottleneck43 = model.layer4[2]
 
         self.auxconv3 = nn.Conv2d(256, 512, 1, 2, 0)
+        self.optionalbn3 = nn.BatchNorm2d(512)
         self.seblock41 = SEBlock(512)
         self.seblock42 = SEBlock(512)
         self.seblock43 = SEBlock(512)
@@ -82,7 +126,9 @@ class SEDense34(nn.Module):
         self.bnlast = nn.BatchNorm1d(128)
         self.relulast = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout()
+
         self.classifier = nn.Linear(128, num_class)
+        self.norm = needs_norm
 
     def forward(self, x):
         x = self.conv0(x)
@@ -108,7 +154,10 @@ class SEDense34(nn.Module):
         branch4 = x
         x = self.bottleneck21(x)
         scale4 = self.seblock21(x)
-        x = scale4 * x + self.auxconv1(branch4)
+        if self.norm:
+            x = scale4 * x + self.optionalbn1(self.auxconv1(branch4))
+        else:
+            x = scale4 * x + self.auxconv1(branch4)
 
         branch5 = x
         x = self.bottleneck22(x)
@@ -128,7 +177,10 @@ class SEDense34(nn.Module):
         branch8 = x
         x = self.bottleneck31(x)
         scale8 = self.seblock31(x)
-        x = scale8 * x + self.auxconv2(branch8)
+        if self.norm:
+            x = scale8 * x + self.optionalbn2(self.auxconv2(branch8))
+        else:
+            x = scale8 * x + self.auxconv2(branch8)
 
         branch9 = x
         x = self.bottleneck32(x)
@@ -158,7 +210,10 @@ class SEDense34(nn.Module):
         branch14 = x
         x = self.bottleneck41(x)
         scale14 = self.seblock41(x)
-        x = scale14 * x + self.auxconv3(branch14)
+        if self.norm:
+            x = scale14 * x + self.optionalbn3(self.auxconv3(branch14))
+        else:
+            x = scale14 * x + self.auxconv3(branch14)
 
         branch15 = x
         x = self.bottleneck42(x)

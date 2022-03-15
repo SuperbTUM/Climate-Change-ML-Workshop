@@ -100,7 +100,8 @@ def data_prepare():
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
-        # transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        # transforms.Pad(10),
+        # transforms.RandomCrop((120, 120)),
         transforms.RandomErasing(),
     ])
     train_ds = DatasetWithAugment(tensor_X_train, tensor_y_train, train_transform)
