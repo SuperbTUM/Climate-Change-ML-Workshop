@@ -6,59 +6,72 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from torch import optim
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingWarmRestarts
 from aimodelshare import download_data
 import zipfile
 from itertools import repeat
 from sklearn.utils import shuffle
 import pandas as pd
 from torchvision import transforms
+from torchvision.transforms.functional import rotate
 from sklearn.utils import class_weight
 
 
+class CustomRandomRotation:
+    def __init__(self):
+        candidates = [0, 90, 180, 270]
+        rand_idx = np.random.randint(0, 4)
+        self.angle = candidates[rand_idx]
+
+    def __call__(self, image):
+        image = rotate(image, self.angle)
+        return image
+
+
 def preprocessor(imageband_directory):
-        """
-        This function preprocesses reads in images, resizes them to a fixed shape and
-        min/max transforms them before converting feature values to float32 numeric values
-        required by onnx files.
+    """
+    This function preprocesses reads in images, resizes them to a fixed shape and
+    min/max transforms them before converting feature values to float32 numeric values
+    required by onnx files.
 
-        params:
-            imageband_directory
-                path to folder with 13 satellite image bands
+    params:
+        imageband_directory
+            path to folder with 13 satellite image bands
 
-        returns:
-            X
-                numpy array of preprocessed image data
+    returns:
+        X
+            numpy array of preprocessed image data
 
-        """
+    """
 
-        import PIL
-        import os
-        import numpy as np
-        import tensorflow_datasets as tfds
+    import PIL
+    import os
+    import numpy as np
+    import tensorflow_datasets as tfds
 
-        def _load_tif(data):
-            """Loads TIF file and returns as float32 numpy array."""
-            img = tfds.core.lazy_imports.PIL_Image.open(data)
-            img = np.array(img.getdata()).reshape(img.size).astype(np.float32)
-            return img
+    def _load_tif(data):
+        """Loads TIF file and returns as float32 numpy array."""
+        img = tfds.core.lazy_imports.PIL_Image.open(data)
+        img = np.array(img.getdata()).reshape(img.size).astype(np.float32)
+        return img
 
-        image_list = []
-        filelist1 = os.listdir(imageband_directory)
-        for fpath in filelist1:
-            fullpath = imageband_directory + "/" + fpath
-            if fullpath.endswith(('B02.tif', 'B03.tif', 'B04.tif')):
-                imgarray = _load_tif(imageband_directory + "/" + fpath)
-                image_list.append(imgarray)
+    image_list = []
+    filelist1 = os.listdir(imageband_directory)
+    for fpath in filelist1:
+        fullpath = imageband_directory + "/" + fpath
+        if fullpath.endswith(('B02.tif', 'B03.tif', 'B04.tif')):
+            imgarray = _load_tif(imageband_directory + "/" + fpath)
+            image_list.append(imgarray)
 
-        X = np.stack(image_list, axis=2)  # to get (height,width,3)
+    X = np.stack(image_list, axis=2)  # to get (height,width,3)
 
-        X = np.expand_dims(X, axis=0)  # Expand dims to add "1" to object shape [1, h, w, channels] for keras model.
-        X = np.array(X, dtype=np.float32)  # Final shape for onnx runtime.
-        X = X / 18581  # min max transform to max value
-        return X
+    X = np.expand_dims(X, axis=0)  # Expand dims to add "1" to object shape [1, h, w, channels] for keras model.
+    X = np.array(X, dtype=np.float32)  # Final shape for onnx runtime.
+    X = X / 18581  # min max transform to max value
+    return X
 
-def data_prepare():
+
+def data_prepare(isCustom=False):
     if not os.path.exists("climate_competition_data"):
         download_data('public.ecr.aws/y2e2a1d6/climate_competition_data-repository:latest')
     if not os.path.exists("competition_data"):
@@ -88,9 +101,12 @@ def data_prepare():
     ylist = list(forest) + list(nonforest) + list(other)
     X, y = shuffle(preprocessed_image_data, ylist, random_state=0)
     X = np.vstack(X)  # convert X from list to array
-    X = X.transpose(0,3,1,2)
+    X = X.transpose(0, 3, 1, 2)
     assert X.shape[1] == 3
-    y_labels_num = pd.DataFrame(y)[0].map({'forest': 0, 'nonforest': 1, 'snow_shadow_cloud': 2})
+    if isCustom:
+        y_labels_num = pd.DataFrame(y)[0].map({'forest': 1 / 6, 'nonforest': 5 / 6, 'snow_shadow_cloud': 0.5})
+    else:
+        y_labels_num = pd.DataFrame(y)[0].map({'forest': 0, 'nonforest': 1, 'snow_shadow_cloud': 2})
 
     y_labels_num = list(y_labels_num)
     X_train = X[0:12000]
@@ -98,20 +114,29 @@ def data_prepare():
     y_train = y_labels_num[0:12000]
     y_val = y_labels_num[12001:15000]
 
-    class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
-    class_weights = torch.tensor(class_weights, dtype=torch.float).cuda()
+    if not isCustom:
+        class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
+        class_weights = torch.tensor(class_weights, dtype=torch.float).cuda()
+    else:
+        class_weights = None
 
     tensor_X_train = torch.Tensor(X_train)
-    tensor_y_train = torch.tensor(y_train, dtype=torch.long)
+    if isCustom:
+        tensor_y_train = torch.Tensor(y_train)
+    else:
+        tensor_y_train = torch.tensor(y_train, dtype=torch.long)
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
-        transforms.RandomRotation(10),
+        CustomRandomRotation(),
     ])
     train_ds = DatasetWithAugment(tensor_X_train, tensor_y_train, train_transform)
 
     tensor_X_test = torch.Tensor(X_val)
-    tensor_y_test = torch.tensor(y_val, dtype=torch.long)
+    if isCustom:
+        tensor_y_test = torch.Tensor(y_val)
+    else:
+        tensor_y_test = torch.tensor(y_val, dtype=torch.long)
     test_transform = None
     test_ds = DatasetWithAugment(tensor_X_test, tensor_y_test, test_transform)
     return train_ds, test_ds, class_weights

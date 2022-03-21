@@ -25,9 +25,81 @@ class SEBlock(nn.Module):
         return x
 
 
-class ResNet50(nn.Module):
-    def __init__(self, num_class=3):
-        super(ResNet50, self).__init__()
+class CustomDownsampleBlock(nn.Module):
+    def __init__(self, in_channels, intermediate_channels, out_channels):
+        super(CustomDownsampleBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, intermediate_channels, 1)
+        self.conv2 = nn.Conv2d(intermediate_channels, intermediate_channels, 3, 2, 1)
+        self.conv3 = nn.Conv2d(intermediate_channels, out_channels, 1)
+        self.avgpool = nn.AvgPool2d(2, 2, ceil_mode=True)
+        self.conv4 = nn.Conv2d(in_channels, out_channels, 1)
+
+    def forward(self, x):
+        branch = x
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        branch = self.avgpool(branch)
+        branch = self.conv4(branch)
+        return x + branch
+
+
+class CustomResNet50(nn.Module):
+    def __init__(self, num_class=3, intermediate_channels=[64, 128, 256, 512]):
+        super(CustomResNet50, self).__init__()
+        model = models.resnet50(pretrained=True)
+        self.conv0 = model.conv1
+        self.bn0 = model.bn1
+        self.relu0 = model.relu
+        self.pooling0 = model.maxpool
+        self.layer1 = model.layer1
+        model.layer1[0] = CustomDownsampleBlock(64, intermediate_channels[0], 256)
+
+        self.layer2 = model.layer2
+        model.layer2[0] = CustomDownsampleBlock(256, intermediate_channels[1], 512)
+
+        self.layer3 = model.layer3
+        model.layer3[0] = CustomDownsampleBlock(512, intermediate_channels[2], 1024)
+
+        self.layer4 = model.layer4
+        model.layer4[0] = CustomDownsampleBlock(1024, intermediate_channels[3], 2048)
+
+        self.avgpool = model.avgpool
+
+        self.fc = nn.Linear(2048, 2048)
+        self.bnlast = nn.BatchNorm1d(2048)
+        self.relulast = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout()
+
+        self.fc1 = nn.Linear(2048, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.classifier = nn.Linear(256, num_class)
+
+    def forward(self, x):
+        x = self.conv0(x)
+        x = self.bn0(x)
+        x = self.relu0(x)
+        x = self.pooling0(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.bnlast(x)
+        x = self.relulast(x)
+        x = self.dropout(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.classifier(x)
+        return x
+
+
+class ResNet50CustomLoss(nn.Module):
+    def __init__(self, num_class=1):
+        super(ResNet50CustomLoss, self).__init__()
         model = models.resnet50(pretrained=True)
         self.conv0 = model.conv1
         self.bn0 = model.bn1
@@ -37,6 +109,114 @@ class ResNet50(nn.Module):
         self.layer2 = model.layer2
         self.layer3 = model.layer3
         self.layer4 = model.layer4
+        self.avgpool = model.avgpool
+
+        self.fc = nn.Linear(2048, 2048)
+        self.bnlast = nn.BatchNorm1d(2048)
+        self.relulast = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout()
+
+        self.fc1 = nn.Linear(2048, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.classifier = nn.Linear(256, num_class)
+
+    def forward(self, x):
+        x = self.conv0(x)
+        x = self.bn0(x)
+        x = self.relu0(x)
+        x = self.pooling0(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.bnlast(x)
+        x = self.relulast(x)
+        x = self.dropout(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.classifier(x)
+        x = torch.sigmoid(x).squeeze()
+        return x
+
+
+class ResNet50DC5(nn.Module):
+    def __init__(self, dilation=True, num_class=3):
+        super(ResNet50DC5, self).__init__()
+        model = models.resnet50(pretrained=True,
+                                replace_stride_with_dilation=[False, False, dilation])
+        self.conv0 = model.conv1
+        self.bn0 = model.bn1
+        self.relu0 = model.relu
+        self.pooling0 = model.maxpool
+        self.layer1 = model.layer1
+        self.layer2 = model.layer2
+        self.layer3 = model.layer3
+        self.layer4 = model.layer4
+        self.avgpool = model.avgpool
+
+        self.fc = nn.Linear(2048, 2048)
+        self.bnlast = nn.BatchNorm1d(2048)
+        self.relulast = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout()
+
+        self.fc1 = nn.Linear(2048, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.classifier = nn.Linear(256, num_class)
+
+    def forward(self, x):
+        x = self.conv0(x)
+        x = self.bn0(x)
+        x = self.relu0(x)
+        x = self.pooling0(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.bnlast(x)
+        x = self.relulast(x)
+        x = self.dropout(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.classifier(x)
+        return x
+
+
+class ResNet50(nn.Module):
+    def __init__(self, num_class=3):
+        super(ResNet50, self).__init__()
+        model = models.resnet50(pretrained=True)
+        self.conv0 = model.conv1
+        self.bn0 = model.bn1
+        self.relu0 = model.relu
+        self.pooling0 = model.maxpool
+        self.layer1 = model.layer1
+        for i in range(len(self.layer1)):
+            for name, module in self.layer1[i].named_modules():
+                if "bn3" in name:
+                    nn.init.constant_(module.weight, 0.)
+        self.layer2 = model.layer2
+        for i in range(len(self.layer2)):
+            for name, module in self.layer2[i].named_modules():
+                if "bn3" in name:
+                    nn.init.constant_(module.weight, 0.)
+        self.layer3 = model.layer3
+        for i in range(len(self.layer3)):
+            for name, module in self.layer3[i].named_modules():
+                if "bn3" in name:
+                    nn.init.constant_(module.weight, 0.)
+        self.layer4 = model.layer4
+        for i in range(len(self.layer4)):
+            for name, module in self.layer4[i].named_modules():
+                if "bn3" in name:
+                    nn.init.constant_(module.weight, 0.)
         self.avgpool = model.avgpool
 
         self.fc = nn.Linear(2048, 2048)
@@ -132,6 +312,7 @@ class SEDense34(nn.Module):
         self.dropout = nn.Dropout()
 
         self.classifier = nn.Linear(128, num_class)
+
         self.norm = needs_norm
 
     def forward(self, x):
@@ -353,3 +534,7 @@ class SEDense18(nn.Module):
 
         return x
 
+
+if __name__ == "__main__":
+    model = ResNet50()
+    print(model)
