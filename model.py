@@ -97,10 +97,10 @@ class CustomResNet50(nn.Module):
         return x
 
 
-class ResNet50CustomLoss(nn.Module):
-    def __init__(self, num_class=1):
-        super(ResNet50CustomLoss, self).__init__()
-        model = models.resnet50(pretrained=True)
+class Baseline(nn.Module):
+    def __init__(self, num_class=3, isCustom=False, backend="resnet50"):
+        super(Baseline, self).__init__()
+        model = getattr(models, backend)(pretrained=True)
         self.conv0 = model.conv1
         self.bn0 = model.bn1
         self.relu0 = model.relu
@@ -119,6 +119,8 @@ class ResNet50CustomLoss(nn.Module):
         self.fc1 = nn.Linear(2048, 512)
         self.fc2 = nn.Linear(512, 256)
         self.classifier = nn.Linear(256, num_class)
+
+        self.isCustom = isCustom
 
     def forward(self, x):
         x = self.conv0(x)
@@ -139,7 +141,8 @@ class ResNet50CustomLoss(nn.Module):
         x = self.fc1(x)
         x = self.fc2(x)
         x = self.classifier(x)
-        x = torch.sigmoid(x).squeeze()
+        if self.isCustom:
+            x = torch.sigmoid(x).squeeze()
         return x
 
 
@@ -533,8 +536,3 @@ class SEDense18(nn.Module):
         x = self.classifier(x)
 
         return x
-
-
-if __name__ == "__main__":
-    model = ResNet50()
-    print(model)
