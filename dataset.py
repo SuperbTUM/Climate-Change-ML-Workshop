@@ -13,8 +13,12 @@ from itertools import repeat
 from sklearn.utils import shuffle
 import pandas as pd
 from torchvision import transforms
-from torchvision.transforms.functional import rotate
 from sklearn.utils import class_weight
+from torchvision.transforms.functional import rotate
+import matplotlib.pyplot as plt
+import warnings
+
+warnings.filterwarnings("ignore")
 
 
 class CustomRandomRotation:
@@ -67,6 +71,7 @@ def preprocessor(imageband_directory):
 
     X = np.expand_dims(X, axis=0)  # Expand dims to add "1" to object shape [1, h, w, channels] for keras model.
     X = np.array(X, dtype=np.float32)  # Final shape for onnx runtime.
+
     X = X / 18581  # min max transform to max value
     return X
 
@@ -128,7 +133,7 @@ def data_prepare(isCustom=False):
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
-        CustomRandomRotation(),
+        transforms.RandomRotation(10),
     ])
     train_ds = DatasetWithAugment(tensor_X_train, tensor_y_train, train_transform)
 
@@ -158,4 +163,3 @@ class DatasetWithAugment(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
-

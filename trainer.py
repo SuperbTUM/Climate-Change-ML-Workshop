@@ -84,10 +84,10 @@ def evaluate(val_ds, model, batch_size=50, isCustom=False):
     return accuracy, f1score  # , threshold1, threshold2
 
 
-def baseline(train_ds, val_ds, backend, class_weights=None, batch_size=50, epochs=30, start_lr=0.001,
+def baseline(train_ds, val_ds, backend, class_weights=None, batch_size=50, epochs=20, start_lr=0.001,
              milestones="500, 1500, 3500, 5500, 7500",
              gpu="0", snapshot=None, models_path="./checkpoint",
-             use_cosinelr=False, test_only=False):
+             use_cosinelr=False, test_only=False, weight_decay=5e-4):
     if milestones is None:
         milestones = "100,200,300"
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu
@@ -104,14 +104,14 @@ def baseline(train_ds, val_ds, backend, class_weights=None, batch_size=50, epoch
         y_cls[i, T] = 1 if class T is present in image i, 0 otherwise
     '''
 
-    optimizer = optim.Adam(net.parameters(), lr=start_lr, weight_decay=5e-4)
+    optimizer = optim.Adam(net.parameters(), lr=start_lr, weight_decay=weight_decay)
     if use_cosinelr:
         scheduler = CosineAnnealingWarmRestarts(optimizer, 500, 2, eta_min=1e-5)
     else:
         scheduler = MultiStepLR(optimizer, milestones=[int(x) for x in milestones.split(',')], gamma=0.5)
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.)
     iter = 0
-    best_score = 0.9
+    best_score = 0.89
     net.train()
     for epoch in range(starting_epoch, starting_epoch + epochs):
         train_loader = DataLoaderX(train_ds, batch_size, shuffle=True, pin_memory=True,
@@ -211,7 +211,7 @@ def toONNX(net):
     return onnx_model
 
 
-def test(model, batch_size=64, isCustom=False, threshold1=None, threshold2=None, softVote=False, TTA=True):
+def test(model, batch_size=50, isCustom=False, threshold1=None, threshold2=None, softVote=False, TTA=True):
     filenumbers = [str(x) for x in range(1, 5001)]
     filenames = ["competition_data/testdata/test/test" + x for x in filenumbers]
 
@@ -276,6 +276,7 @@ def test(model, batch_size=64, isCustom=False, threshold1=None, threshold2=None,
                     else:
                         augmented_predict = augmented_predict.T
                         batched_predict = stats.mode(augmented_predict, axis=1)[0].flatten().tolist()
+                assert len(batched_predict) in {batch_size, 5000%batch_size}
                 prediction_column_index.extend(batched_predict)
     else:
         with torch.no_grad():
@@ -297,12 +298,14 @@ if __name__ == "__main__":
     # params
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--epoch", type=int, default=40)
+    parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--isCustom", action="store_true")
     parser.add_argument("--backbone", type=str, default="resnet50")
     parser.add_argument("--cyclical", action="store_true")
     parser.add_argument("--softvote", action="store_true")
     parser.add_argument("--tta", action="store_true")
     parser.add_argument("--test_only", action="store_true")
+    parser.add_argument("--weight_decay", type=float, default=5e-4)
     args = parser.parse_args()
 
     train_ds, val_ds, class_weights = data_prepare(args.isCustom)
@@ -316,7 +319,7 @@ if __name__ == "__main__":
                                                       snapshot=checkpoint, test_only=args.test_only)
     else:
         net = baseline(train_ds, val_ds, args.backbone, class_weights, args.batch_size, args.epoch,
-                       snapshot=checkpoint, use_cosinelr=args.cyclical, test_only=args.test_only)
+                       args.lr, snapshot=checkpoint, use_cosinelr=args.cyclical, test_only=args.test_only, weight_decay=args.weight_decay)
         threshold1 = threshold2 = None
     onnx_model = toONNX(net)
-    test(net, 64, args.isCustom, threshold1, threshold2, args.softvote, args.tta)
+    test(net, args.batch_size, args.isCustom, threshold1, threshold2, args.softvote, args.tta)

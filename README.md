@@ -21,23 +21,23 @@ pip install aimodelshare-nightly dill pydot regex prefetch_generator tensorflow_
 Activate the program with the following command (But you can always change any hyper-parameters or call different backbones)
 
 ```
-python trainer.py --batch_size 50 --tta
+python trainer.py --batch_size 64 --tta --weight_decay 0.
 ```
 
 
 
 ## Leaderboard
 
-Last update on Mar. 22nd
+Last update on Mar. 25nd
 
 | Accuracy | Accuracy Rank | F1 score | F1 Rank | Precision | Recall |
 | -------- | ------------- | -------- | ------- | --------- | ------ |
-| 0.8224   | 1             | 0.7750   | 2       | 0.8286    | 0.7871 |
+| 0.8444   | 1             | 0.8076   | 1       | 0.8443    | 0.8233 |
 
 
 
-## Issues
+## Tricks
 
-Attempts of tricks from [this paper](https://arxiv.org/pdf/1812.01187.pdf) are all failed. (?)
+This should be a hard classification problem, so there is no label smooth.
 
-ResNet-101 is not applicable because of over-fitting issues.
+Dropout should be applied appropriately.
