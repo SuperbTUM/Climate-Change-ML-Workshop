@@ -10,6 +10,7 @@ from scipy import stats
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 import argparse
+from collections import OrderedDict
 
 cudnn.enabled = True
 cudnn.benchmark = True
@@ -143,6 +144,76 @@ def baseline(train_ds, val_ds, backend, class_weights=None, batch_size=50, epoch
     file = glob.glob("checkpoint/*.pt")[0]
     net.load_state_dict(torch.load(file))
     return net
+
+
+def trainInception(train_ds, val_ds, backend, class_weights=None, batch_size=50, epochs=20, start_lr=0.001,
+             milestones="500, 1500, 3500, 5500, 7500",
+             gpu="0", snapshot=None, models_path="./checkpoint",
+             use_cosinelr=False, test_only=False, weight_decay=5e-4):
+    if milestones is None:
+        milestones = "100,200,300"
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu
+    net, starting_epoch = load_model(backend, snapshot)
+    if starting_epoch >= epochs or test_only:
+        return net
+    epochs = epochs - starting_epoch
+    '''
+        To follow this training routine you need a DataLoader that yields the tuples of the following format:
+        (Bx3xHxW FloatTensor x, BxHxW LongTensor y, BxN LongTensor y_cls) where
+        x - batch of input images,
+        y - batch of groung truth seg maps,
+        y_cls - batch of 1D tensors of dimensionality N: N total number of classes, 
+        y_cls[i, T] = 1 if class T is present in image i, 0 otherwise
+    '''
+    optimizer = optim.Adam(net.parameters(), lr=start_lr, weight_decay=weight_decay)
+    if use_cosinelr:
+        scheduler = CosineAnnealingWarmRestarts(optimizer, 500, 2, eta_min=1e-5)
+    else:
+        scheduler = MultiStepLR(optimizer, milestones=[int(x) for x in milestones.split(',')], gamma=0.5,
+                                last_epoch=starting_epoch-1)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.)
+    iter = 0
+    best_score = 0.89
+    net.train()
+    for epoch in range(starting_epoch, starting_epoch + epochs):
+        train_loader = DataLoaderX(train_ds, batch_size, shuffle=True, pin_memory=True,
+                                   num_workers=4)
+        accuracy, f1_score = evaluate(val_ds, net, batch_size)
+        if f1_score >= best_score:
+            net.eval()
+            files = glob.glob("checkpoint/*.pt")
+            for f in files:
+                os.remove(f)
+            torch.save(net.state_dict(), os.path.join(models_path, '_'.join(["CCNet", str(epoch + 1)]) + ".pt"))
+            net.train()
+            best_score = f1_score
+        iterator = tqdm(train_loader)
+        for image, label in iterator:
+            optimizer.zero_grad()
+            image, label = image.cuda(), label.cuda()
+            predict, aux_predict = net(image)
+            iter += 1
+            loss = criterion(predict, label) + 0.4 * criterion(aux_predict, label)
+            loss.backward()
+            nn.utils.clip_grad_norm_(net.parameters(), 10.)
+            optimizer.step()
+            scheduler.step()
+            status = "epoch: {}, iter: {}, loss: {:.4f}, lr: {:.5f}".format(epoch, iter, loss,
+                                                                            scheduler.get_last_lr()[0])
+            iterator.set_description(status)
+    net.eval()
+    file = glob.glob("checkpoint/*.pt")[0]
+
+    # Initialize an inference version
+    eval_net = Inception(training=False).cuda()
+    eval_net.eval()
+    states = torch.load(file)
+    d = OrderedDict()
+    for key in states:
+        if "aux" not in key:
+            d[key] = states[key]
+    eval_net.load_state_dict(d)
+    return eval_net
 
 
 def trainCustomLoss(train_ds, val_ds, class_weights=None, batch_size=50, epochs=40, start_lr=0.001,
@@ -318,8 +389,8 @@ if __name__ == "__main__":
         net, threshold1, threshold2 = trainCustomLoss(train_ds, val_ds, class_weights, args.batch_size, args.epoch,
                                                       snapshot=checkpoint, test_only=args.test_only)
     else:
-        net = baseline(train_ds, val_ds, args.backbone, class_weights, args.batch_size, args.epoch,
-                       args.lr, snapshot=checkpoint, use_cosinelr=args.cyclical, test_only=args.test_only, weight_decay=args.weight_decay)
+        net = trainInception(train_ds, val_ds, args.backbone, class_weights, args.batch_size, args.epoch,
+                             args.lr, snapshot=checkpoint, use_cosinelr=args.cyclical, test_only=args.test_only, weight_decay=args.weight_decay)
         threshold1 = threshold2 = None
     onnx_model = toONNX(net)
     test(net, args.batch_size, args.isCustom, threshold1, threshold2, args.softvote, args.tta)

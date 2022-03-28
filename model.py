@@ -3,6 +3,85 @@ import torch.nn as nn
 from torchvision import models
 
 
+class Inception(nn.Module):
+    def __init__(self, num_class=3, training=True):
+        super(Inception, self).__init__()
+        model = models.inception_v3(pretrained=True)
+        self.inception_conv1 = model.Conv2d_1a_3x3
+        self.inception_conv2 = model.Conv2d_2a_3x3
+        self.inception_conv3 = model.Conv2d_2b_3x3
+        self.maxpool1 = model.maxpool1
+        self.inception_conv4 = model.Conv2d_3b_1x1
+        self.inception_conv5 = model.Conv2d_4a_3x3
+        self.maxpool2 = model.maxpool2
+        self.mixed1 = model.Mixed_5b
+        self.mixed2 = model.Mixed_5c
+        self.mixed3 = model.Mixed_5d
+        self.mixed4 = model.Mixed_6a
+        self.mixed5 = model.Mixed_6b
+        self.mixed6 = model.Mixed_6c
+        self.mixed7 = model.Mixed_6d
+        self.mixed8 = model.Mixed_6e
+        if training:
+            self.auxlogits = model.AuxLogits.conv0
+            self.auxlogits1 = model.AuxLogits.conv1
+            self.auxlogits2 = nn.Linear(768, num_class)
+        self.mixed9 = model.Mixed_7a
+        self.mixed10 = model.Mixed_7b
+        self.mixed11 = model.Mixed_7c
+        self.avgpool = model.avgpool
+        self.fc = nn.Linear(2048, 2048)
+        self.bnlast = nn.BatchNorm1d(2048)
+        self.relulast = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout()
+
+        self.fc1 = nn.Linear(2048, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.classifier = nn.Linear(256, num_class)
+
+        self.training = training
+
+    def forward(self, x):
+        assert x.size(1) == 3
+        x = self.inception_conv1(x)
+        x = self.inception_conv2(x)
+        x = self.inception_conv3(x)
+        x = self.maxpool1(x)
+        x = self.inception_conv4(x)
+        x = self.inception_conv5(x)
+        x = self.maxpool2(x)
+        x = self.mixed1(x)
+        x = self.mixed2(x)
+        x = self.mixed3(x)
+        x = self.mixed4(x)
+        x = self.mixed5(x)
+        x = self.mixed6(x)
+        x = self.mixed7(x)
+        x = self.mixed8(x)
+
+        if self.training:
+            aux = self.auxlogits(x)
+            aux = self.auxlogits1(aux)
+            aux = aux.view(aux.size(0), -1)
+            aux = self.auxlogits2(aux)
+        x = self.mixed9(x)
+        x = self.mixed10(x)
+        x = self.mixed11(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        x = self.bnlast(x)
+        x = self.relulast(x)
+        x = self.dropout(x)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.classifier(x)
+        if self.training:
+            return x, aux
+        else:
+            return x
+
+
 class SEBlock(nn.Module):
     def __init__(self, c_in):
         super().__init__()
