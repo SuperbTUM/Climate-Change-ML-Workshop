@@ -1,4 +1,5 @@
 from model import *
+from xception import xception
 from dataset import *
 from prefetch_generator import BackgroundGenerator
 from torch.backends import cudnn
@@ -29,7 +30,8 @@ def F1score(predict, target):
 
 def load_model(backend="resnet50", checkpoint=None):
     epoch = 0
-    net = Baseline(backend=backend).cuda()
+    # net = Baseline(backend=backend).cuda()
+    net = xception(pretrained=True).cuda()
     # net = nn.DataParallel(net)
     if checkpoint and os.path.exists(checkpoint):
         _, epoch = os.path.basename(checkpoint).split('_')
@@ -389,7 +391,7 @@ if __name__ == "__main__":
         net, threshold1, threshold2 = trainCustomLoss(train_ds, val_ds, class_weights, args.batch_size, args.epoch,
                                                       snapshot=checkpoint, test_only=args.test_only)
     else:
-        net = trainInception(train_ds, val_ds, args.backbone, class_weights, args.batch_size, args.epoch,
+        net = baseline(train_ds, val_ds, args.backbone, class_weights, args.batch_size, args.epoch,
                              args.lr, snapshot=checkpoint, use_cosinelr=args.cyclical, test_only=args.test_only, weight_decay=args.weight_decay)
         threshold1 = threshold2 = None
     onnx_model = toONNX(net)

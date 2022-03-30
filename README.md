@@ -28,12 +28,12 @@ python trainer.py --batch_size 64 --tta --weight_decay 0.
 
 ## Leaderboard
 
-Last update on Mar. 28th (EST)
+Last update on Mar. 29th (EST)
 
-| Accuracy | Accuracy Rank | F1 score | F1 Rank | Precision | Recall | Backbone     |
-|----------|---------------|----------|---------|-----------|--------|--------------|
-| 0.8444   | 1             | 0.8076   | 1       | 0.8443    | 0.8233 | ResNet50     |
-| 0.8148   | 5             | 0.7804   | 4       | 0.8189    | 0.7896 | Inception V3 |
+| Accuracy | Accuracy Rank | F1 score | F1 Rank | Precision | Recall | Backbone |
+|----------|---------------|----------|---------|-----------|--------|----------|
+| 0.8444   | 1             | 0.8076   | 1       | 0.8443    | 0.8233 | ResNet50 |
+| 0.8312   | 4             | 0.7861   | 6       | 0.8313    | 0.7973 | Xception |
 
 
 
@@ -43,4 +43,3 @@ This should be a hard classification problem, so there is no label smooth.
 
 Dropout should be applied appropriately.
 
-InceptionNet performs as not good as ResNet50. Please try [Inception-ResNet-v2](https://rwightman.github.io/pytorch-image-models/models/inception-resnet-v2/) instead.
