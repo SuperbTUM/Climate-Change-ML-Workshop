@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 from torch.autograd import Variable
-from torch.utils.data import DataLoader, Dataset, sampler
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from torch import optim
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingWarmRestarts
@@ -37,15 +37,12 @@ def preprocessor(imageband_directory):
     This function preprocesses reads in images, resizes them to a fixed shape and
     min/max transforms them before converting feature values to float32 numeric values
     required by onnx files.
-
     params:
         imageband_directory
             path to folder with 13 satellite image bands
-
     returns:
         X
             numpy array of preprocessed image data
-
     """
 
     import PIL
@@ -76,7 +73,7 @@ def preprocessor(imageband_directory):
     return X
 
 
-def data_prepare():
+def data_prepare(isCustom=False):
     if not os.path.exists("climate_competition_data"):
         download_data('public.ecr.aws/y2e2a1d6/climate_competition_data-repository:latest')
     if not os.path.exists("competition_data"):
@@ -104,46 +101,47 @@ def data_prepare():
     nonforest = repeat("nonforest", 5000)
     other = repeat("snow_shadow_cloud", 5000)
     ylist = list(forest) + list(nonforest) + list(other)
-
-    return preprocessed_image_data, ylist
-
-
-def dataset_generation(preprocessed_image_data, ylist):
     X, y = shuffle(preprocessed_image_data, ylist, random_state=0)
     X = np.vstack(X)  # convert X from list to array
     X = X.transpose(0, 3, 1, 2)
     assert X.shape[1] == 3
-    y_labels_num = pd.DataFrame(y)[0].map({'forest': 0, 'nonforest': 1, 'snow_shadow_cloud': 2})
-    y_labels_num = list(y_labels_num)
+    if isCustom:
+        y_labels_num = pd.DataFrame(y)[0].map({'forest': 1 / 6, 'nonforest': 5 / 6, 'snow_shadow_cloud': 0.5})
+    else:
+        y_labels_num = pd.DataFrame(y)[0].map({'forest': 0, 'nonforest': 1, 'snow_shadow_cloud': 2})
 
-    tensor_X = torch.Tensor(X)
-    tensor_y = torch.tensor(y_labels_num, dtype=torch.long)
-    transform = transforms.Compose([
+    y_labels_num = list(y_labels_num)
+    X_train = X[0:12000]
+    X_val = X[12001:15000]
+    y_train = y_labels_num[0:12000]
+    y_val = y_labels_num[12001:15000]
+
+    if not isCustom:
+        class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
+        class_weights = torch.tensor(class_weights, dtype=torch.float).cuda()
+    else:
+        class_weights = None
+
+    tensor_X_train = torch.Tensor(X_train)
+    if isCustom:
+        tensor_y_train = torch.Tensor(y_train)
+    else:
+        tensor_y_train = torch.tensor(y_train, dtype=torch.long)
+    train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
         transforms.RandomRotation(10),
     ])
-    ds = DatasetWithAugment(tensor_X, tensor_y, transform)
-    return ds, y_labels_num
+    train_ds = DatasetWithAugment(tensor_X_train, tensor_y_train, train_transform)
 
-
-def split_train_validate(ds, y_labels_num, split=.2, random_seed=42):
-    y_labels_num = np.asarray(y_labels_num)
-    datasize = len(ds)
-    indices = list(range(datasize))
-    # np.random.seed(random_seed) you don't need this!!!
-    np.random.shuffle(indices)
-    train_size = int(datasize * (1-split))
-    train_indices = indices[:train_size]
-
-    y_train = y_labels_num[train_indices]
-    class_weights = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
-    class_weights = torch.tensor(class_weights, dtype=torch.float).cuda()
-
-    val_indices = indices[train_size:]
-    train_sampler = sampler.SubsetRandomSampler(train_indices)
-    valid_sampler = sampler.SubsetRandomSampler(val_indices)
-    return train_sampler, valid_sampler, class_weights
+    tensor_X_test = torch.Tensor(X_val)
+    if isCustom:
+        tensor_y_test = torch.Tensor(y_val)
+    else:
+        tensor_y_test = torch.tensor(y_val, dtype=torch.long)
+    test_transform = None
+    test_ds = DatasetWithAugment(tensor_X_test, tensor_y_test, test_transform)
+    return train_ds, test_ds, class_weights
 
 
 class DatasetWithAugment(Dataset):

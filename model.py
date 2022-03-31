@@ -177,7 +177,7 @@ class CustomResNet50(nn.Module):
 
 
 class Baseline(nn.Module):
-    def __init__(self, num_class=3, isCustom=False, backend="resnet50"):
+    def __init__(self, num_class=3, backend="resnet50"):
         super(Baseline, self).__init__()
         model = getattr(models, backend)(pretrained=True)
         self.conv0 = model.conv1
@@ -199,8 +199,6 @@ class Baseline(nn.Module):
         self.fc2 = nn.Linear(512, 256)
         self.classifier = nn.Linear(256, num_class)
 
-        self.isCustom = isCustom
-
     def forward(self, x):
         x = self.conv0(x)
         x = self.bn0(x)
@@ -220,8 +218,6 @@ class Baseline(nn.Module):
         x = self.fc1(x)
         x = self.fc2(x)
         x = self.classifier(x)
-        if self.isCustom:
-            x = torch.sigmoid(x).squeeze()
         return x
 
 
