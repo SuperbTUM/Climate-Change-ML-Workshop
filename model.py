@@ -190,14 +190,14 @@ class Baseline(nn.Module):
         self.layer4 = model.layer4
         self.avgpool = model.avgpool
 
-        self.fc = nn.Linear(2048, 2048)
-        self.bnlast = nn.BatchNorm1d(2048)
+        self.fc = nn.Linear(2048, 512)
+        self.bnlast = nn.BatchNorm1d(512)
         self.relulast = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout()
 
-        self.fc1 = nn.Linear(2048, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.classifier = nn.Linear(256, num_class)
+        self.fc1 = nn.Linear(512, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.classifier = nn.Linear(64, num_class)
 
     def forward(self, x):
         x = self.conv0(x)
